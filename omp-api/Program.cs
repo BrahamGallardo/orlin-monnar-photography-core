@@ -1,11 +1,13 @@
 using System.Threading.RateLimiting;
 using BrahmCQRS.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using omp_api;
+using omp_api.Handlers;
 using omp_application.Contracts.Services;
 using omp_application.Mappings;
 using omp_application.Services;
@@ -82,6 +84,25 @@ builder.Services.Configure<StorageSettings>(
 // de modo que un RootPath mal puesto falla en el inicio y no en el primer upload.
 builder.Services.AddSingleton<IStorageService, LocalStorageService>();
 builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
+
+// Un solo valor de configuración manda sobre todo el pipeline de subida.
+var maxUploadBytes = builder.Configuration.GetValue("Storage:MaxUploadSizeMB", 25) * 1024L * 1024L;
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = maxUploadBytes;
+});
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = maxUploadBytes;
+});
+
+// -----------------------------------------------------------------------------
+// Manejo global de excepciones
+// -----------------------------------------------------------------------------
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 // -----------------------------------------------------------------------------
 // Rate limiting (endpoints públicos anónimos y subida de imágenes)
@@ -181,6 +202,10 @@ var app = builder.Build();
 // -----------------------------------------------------------------------------
 // Pipeline HTTP
 // -----------------------------------------------------------------------------
+
+// Primero de todo: cualquier excepción aguas abajo sale como ProblemDetails.
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
