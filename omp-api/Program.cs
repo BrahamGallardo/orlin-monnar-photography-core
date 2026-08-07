@@ -2,6 +2,8 @@ using System.Threading.RateLimiting;
 using BrahmCQRS.Infrastructure.Extensions;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using omp_api;
 using omp_application.Contracts.Services;
@@ -70,7 +72,16 @@ builder.Services.AddScoped<IGalleryService, GalleryService>();
 builder.Services.AddScoped<IAppointmentService, AppointmentService>();
 builder.Services.AddScoped<IContactUsService, ContactUsService>();
 
-// PENDIENTE (B7): IStorageService, IImageProcessingService.
+// -----------------------------------------------------------------------------
+// Almacenamiento y procesamiento de imágenes
+// -----------------------------------------------------------------------------
+builder.Services.Configure<StorageSettings>(
+    builder.Configuration.GetSection(StorageSettings.SectionName));
+
+// Singleton: sin estado por request y valida la configuración al arrancar,
+// de modo que un RootPath mal puesto falla en el inicio y no en el primer upload.
+builder.Services.AddSingleton<IStorageService, LocalStorageService>();
+builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
 
 // -----------------------------------------------------------------------------
 // Rate limiting (endpoints públicos anónimos y subida de imágenes)
@@ -178,6 +189,23 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Los derivados de la galería se sirven como estáticos desde la raíz de Storage.
+// En producción esto lo hace el reverse proxy, no Kestrel.
+var storageSettings = app.Services.GetRequiredService<IOptions<StorageSettings>>().Value;
+
+if (!string.IsNullOrWhiteSpace(storageSettings.RootPath))
+{
+    Directory.CreateDirectory(storageSettings.RootPath);
+
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(Path.GetFullPath(storageSettings.RootPath)),
+        RequestPath = storageSettings.PublicBaseUrl.TrimEnd('/'),
+        OnPrepareResponse = context =>
+            context.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable"
+    });
+}
 
 app.UseRateLimiter();
 
