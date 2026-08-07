@@ -213,7 +213,13 @@ if (app.Environment.IsDevelopment())
     app.UseCors(DevCorsPolicy);
 }
 
-app.UseHttpsRedirection();
+// En desarrollo no se redirige a HTTPS: el navegador no sigue redirecciones en
+// las peticiones OPTIONS, por lo que el preflight de CORS de la landing falla.
+// En producción el proxy sirve landing, panel y API bajo el mismo origen y HTTPS.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 // Los derivados de la galería se sirven como estáticos desde la raíz de Storage.
 // En producción esto lo hace el reverse proxy, no Kestrel.
