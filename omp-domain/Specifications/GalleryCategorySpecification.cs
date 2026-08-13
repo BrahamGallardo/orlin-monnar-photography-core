@@ -67,11 +67,28 @@ public class GalleryCategorySpecification : BaseSpecification<GalleryCategory>
     }
 
     /// <summary>
-    /// Gets all categories with pagination, ordered by display order.
+    /// Gets all active categories with pagination, ordered by display order.
     /// </summary>
     /// <param name="pageIndex">Page index (1-based).</param>
     /// <param name="pageSize">Number of items per page.</param>
     public GalleryCategorySpecification(int pageIndex, int pageSize)
+        : this(pageIndex, pageSize, includeDeactivated: false)
+    {
+    }
+
+    /// <summary>
+    /// Gets categories with pagination, optionally including deactivated ones.
+    /// </summary>
+    /// <param name="pageIndex">Page index (1-based).</param>
+    /// <param name="pageSize">Number of items per page.</param>
+    /// <param name="includeDeactivated">True to include soft deleted categories.</param>
+    /// <remarks>
+    /// El panel es el único consumidor de la variante con despublicadas. Sin ella, una
+    /// categoría despublicada desaparece del listado —el filtro de raíz la esconde— y no
+    /// queda forma de volver a publicarla, mientras su slug sigue reservado por el índice
+    /// único. Nunca exponer esta sobrecarga en una ruta anónima.
+    /// </remarks>
+    public GalleryCategorySpecification(int pageIndex, int pageSize, bool includeDeactivated)
         : base()
     {
         ApplyPaging(pageIndex, pageSize);
@@ -80,6 +97,11 @@ public class GalleryCategorySpecification : BaseSpecification<GalleryCategory>
         // DisplayOrder no es único: sin desempate, OFFSET/FETCH puede repetir u omitir
         // filas entre páginas. La PK lo hace determinista.
         AddThenBy(x => x.Id);
+
+        if (includeDeactivated)
+        {
+            ApplyIncludeDisabled();
+        }
     }
 
     /// <summary>

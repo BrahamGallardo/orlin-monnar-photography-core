@@ -117,9 +117,15 @@ public class GalleryService : IGalleryService
     }
 
     /// <inheritdoc/>
-    public async Task<IPaginatedList<GalleryCategoryDto>> GetCategoriesPageAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default)
+    public async Task<IPaginatedList<GalleryCategoryDto>> GetCategoriesPageAsync(
+        int pageIndex,
+        int pageSize,
+        bool includeDeactivated = false,
+        CancellationToken cancellationToken = default)
     {
-        var page = await _categoryQueryService.GetPaginatedAsync(new GalleryCategorySpecification(pageIndex, pageSize), cancellationToken);
+        var page = await _categoryQueryService.GetPaginatedAsync(
+            new GalleryCategorySpecification(pageIndex, pageSize, includeDeactivated),
+            cancellationToken);
 
         var photosByCategory = await GetActivePhotosByCategoryAsync(
             page.Items.Select(category => category.Id).ToList(),
@@ -128,6 +134,17 @@ public class GalleryService : IGalleryService
         // Sin caché: la ruta del panel está autenticada y paginada, y debe ver los cambios
         // recién guardados sin esperar al TTL del listado público.
         return page.MapPage(category => MapCategorySummary(category, photosByCategory));
+    }
+
+    /// <inheritdoc/>
+    public async Task ReactivateCategoryAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var reactivated = await _categoryCommandService.ReactivateAsync(id, cancellationToken);
+
+        if (!reactivated)
+        {
+            throw new EntityNotFoundException(nameof(GalleryCategory), id);
+        }
     }
 
     /// <inheritdoc/>
