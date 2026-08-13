@@ -111,6 +111,20 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
+    // Formularios públicos anónimos (login, booking, contacto). 5/min por IP: son envíos
+    // puntuales de usuario, no navegación; un límite bajo frena scripts/fuerza bruta sin
+    // afectar el uso normal.
+    options.AddPolicy(RateLimitPolicies.PublicForms, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+
     // Los GET públicos son anónimos y devuelven listados completos: el límite acota la
     // amplificación, no la navegación. 60/min por IP deja pasar una sesión normal de la
     // landing (categorías + carrusel + una galería) sin acercarse al tope; las 5/min de

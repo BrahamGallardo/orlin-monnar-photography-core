@@ -31,17 +31,34 @@ public class GalleryAdminController : ControllerBase
     /// </summary>
     /// <param name="pageIndex">Índice de página, base 1.</param>
     /// <param name="pageSize">Cantidad de elementos por página.</param>
+    /// <param name="includeDeactivated">Incluir las categorías despublicadas.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
     [HttpGet("categories")]
     [ProducesResponseType(typeof(IPaginatedList<GalleryCategoryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCategoriesPage(
         [FromQuery] int pageIndex = 1,
         [FromQuery] int pageSize = 15,
+        [FromQuery] bool includeDeactivated = false,
         CancellationToken cancellationToken = default)
     {
-        var page = await _galleryService.GetCategoriesPageAsync(pageIndex, pageSize, cancellationToken);
+        var page = await _galleryService.GetCategoriesPageAsync(pageIndex, pageSize, includeDeactivated, cancellationToken);
 
         return Ok(page);
+    }
+
+    /// <summary>
+    /// Vuelve a publicar una categoría despublicada.
+    /// </summary>
+    /// <param name="id">Identificador de la categoría.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    [HttpPost("categories/{id:int}/reactivate")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReactivateCategory(int id, CancellationToken cancellationToken)
+    {
+        await _galleryService.ReactivateCategoryAsync(id, cancellationToken);
+
+        return NoContent();
     }
 
     /// <summary>

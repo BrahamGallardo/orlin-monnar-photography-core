@@ -33,11 +33,35 @@ public interface IGalleryService
     /// <param name="cancellationToken">Token de cancelación.</param>
     Task<IReadOnlyList<PhotoDto>> GetFeaturedPhotosAsync(int take, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Obtiene una página de categorías para el panel.
+    /// </summary>
+    /// <param name="pageIndex">Índice de página, base 1.</param>
+    /// <param name="pageSize">Cantidad de elementos por página.</param>
+    /// <param name="includeDeactivated">Incluir las categorías despublicadas.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
     /// <remarks>
     /// Misma forma que el listado público —<c>CoverPhoto</c> y <c>PhotoCount</c> poblados,
-    /// <c>Photos</c> vacío— pero sin caché: el panel debe ver los cambios recién guardados.
+    /// <c>Photos</c> vacío— pero sin caché. Despublicar una categoría no despublica sus
+    /// fotografías, así que una categoría despublicada conserva su conteo y su portada.
     /// </remarks>
-    Task<IPaginatedList<GalleryCategoryDto>> GetCategoriesPageAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+    Task<IPaginatedList<GalleryCategoryDto>> GetCategoriesPageAsync(
+        int pageIndex,
+        int pageSize,
+        bool includeDeactivated = false,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Vuelve a publicar una categoría despublicada.
+    /// </summary>
+    /// <param name="id">Identificador de la categoría.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// No puede chocar contra el índice único de Slug: si una categoría despublicada ocupa
+    /// ese slug, por definición ninguna otra lo tiene. El listado público refleja el cambio
+    /// al vencer el TTL de 60 segundos de la caché.
+    /// </remarks>
+    Task ReactivateCategoryAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene una categoría por identificador, con sus fotografías.
