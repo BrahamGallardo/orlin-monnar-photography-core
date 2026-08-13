@@ -27,6 +27,7 @@ public class ContactMessageSpecification : BaseSpecification<ContactMessage>
     {
         ApplyPaging(pageIndex, pageSize);
         AddOrderByDescending(x => x.CreatedDate);
+        //AddThenBy(x => x.Id);
     }
 
     /// <summary>
@@ -40,5 +41,6 @@ public class ContactMessageSpecification : BaseSpecification<ContactMessage>
     {
         ApplyPaging(pageIndex, pageSize);
         AddOrderByDescending(x => x.CreatedDate);
+        //AddThenBy(x => x.Id);
     }
 }

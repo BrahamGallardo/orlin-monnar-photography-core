@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using omp_application.Contracts.Services;
 using omp_application.DTOs.Gallery;
 
@@ -11,6 +12,7 @@ namespace omp_api.Controllers;
 [ApiController]
 [Route("api/gallery")]
 [AllowAnonymous]
+[EnableRateLimiting(RateLimitPolicies.PublicReads)]
 public class GalleryController : ControllerBase
 {
     private const int MaxFeaturedPhotos = 50;

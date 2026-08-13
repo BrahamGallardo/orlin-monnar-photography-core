@@ -1,6 +1,7 @@
 using BrahmCQRS.Domain.Contracts.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using omp_application.Contracts.Services;
 using omp_application.DTOs.Package;
 
@@ -30,7 +31,9 @@ public class PackageController : ControllerBase
     /// <param name="cancellationToken">Token de cancelación.</param>
     [HttpGet]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicies.PublicReads)]
     [ProducesResponseType(typeof(IReadOnlyList<PackageDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> GetPublishedPackages(CancellationToken cancellationToken)
     {
         var packages = await _packageService.GetPublishedPackagesAsync(cancellationToken);

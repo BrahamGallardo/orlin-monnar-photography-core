@@ -111,12 +111,18 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    options.AddPolicy(RateLimitPolicies.PublicForms, httpContext =>
+    // Los GET públicos son anónimos y devuelven listados completos: el límite acota la
+    // amplificación, no la navegación. 60/min por IP deja pasar una sesión normal de la
+    // landing (categorías + carrusel + una galería) sin acercarse al tope; las 5/min de
+    // PublicForms estrangularían la navegación.
+    // Esto es la defensa contra abuso; la caché del servicio es rendimiento. Resuelven
+    // cosas distintas y no se sustituyen.
+    options.AddPolicy(RateLimitPolicies.PublicReads, httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = 60,
                 Window = TimeSpan.FromMinutes(1),
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                 QueueLimit = 0

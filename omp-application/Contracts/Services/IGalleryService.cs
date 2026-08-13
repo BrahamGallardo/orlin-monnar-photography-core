@@ -12,6 +12,11 @@ public interface IGalleryService
     /// Obtiene las categorías publicadas para la galería pública.
     /// </summary>
     /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// Cada categoría trae <c>CoverPhoto</c> y <c>PhotoCount</c> calculados sobre sus
+    /// fotografías activas, y <c>Photos</c> vacío. El resultado se cachea 60 segundos sin
+    /// invalidación: una fotografía recién subida puede tardar ese tiempo en reflejarse.
+    /// </remarks>
     Task<IReadOnlyList<GalleryCategoryDto>> GetPublishedCategoriesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -28,12 +33,10 @@ public interface IGalleryService
     /// <param name="cancellationToken">Token de cancelación.</param>
     Task<IReadOnlyList<PhotoDto>> GetFeaturedPhotosAsync(int take, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Obtiene una página de categorías para el panel.
-    /// </summary>
-    /// <param name="pageIndex">Índice de página, base 1.</param>
-    /// <param name="pageSize">Cantidad de elementos por página.</param>
-    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// Misma forma que el listado público —<c>CoverPhoto</c> y <c>PhotoCount</c> poblados,
+    /// <c>Photos</c> vacío— pero sin caché: el panel debe ver los cambios recién guardados.
+    /// </remarks>
     Task<IPaginatedList<GalleryCategoryDto>> GetCategoriesPageAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -43,19 +46,18 @@ public interface IGalleryService
     /// <param name="cancellationToken">Token de cancelación.</param>
     Task<GalleryCategoryDto?> GetCategoryByIdAsync(int id, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Registra una categoría nueva.
-    /// </summary>
-    /// <param name="dto">Datos de la categoría.</param>
-    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// El DTO devuelto no lleva <c>CoverPhoto</c>, <c>PhotoCount</c> ni <c>Photos</c>
+    /// poblados: la entidad se guarda sin cargar su colección de fotografías. El panel debe
+    /// refrescar desde el listado si necesita esos campos después de guardar.
+    /// </remarks>
     Task<GalleryCategoryDto> CreateCategoryAsync(GalleryCategoryDto dto, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Actualiza una categoría existente conservando su auditoría de creación.
-    /// </summary>
-    /// <param name="id">Identificador de la categoría.</param>
-    /// <param name="dto">Datos actualizados.</param>
-    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// El DTO devuelto no lleva <c>CoverPhoto</c>, <c>PhotoCount</c> ni <c>Photos</c>
+    /// poblados: la entidad se guarda sin cargar su colección de fotografías. El panel debe
+    /// refrescar desde el listado si necesita esos campos después de guardar.
+    /// </remarks>
     Task<GalleryCategoryDto> UpdateCategoryAsync(int id, GalleryCategoryDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>

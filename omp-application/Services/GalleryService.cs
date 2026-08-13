@@ -9,6 +9,7 @@ using omp_application.DTOs.Gallery;
 using omp_application.Mappings;
 using omp_domain.Entities;
 using omp_domain.Specifications;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace omp_application.Services;
 
@@ -18,6 +19,11 @@ namespace omp_application.Services;
 public class GalleryService : IGalleryService
 {
     private static readonly string[] DefaultAllowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+
+    private const string PublishedCategoriesCacheKey = "gallery:categories:published";
+    private static readonly TimeSpan PublishedCategoriesCacheTtl = TimeSpan.FromSeconds(60);
+
+    private readonly IMemoryCache _memoryCache;
 
     private readonly IQueryService<GalleryCategory> _categoryQueryService;
     private readonly ICommandService<GalleryCategory> _categoryCommandService;
@@ -49,6 +55,7 @@ public class GalleryService : IGalleryService
         IImageProcessingService imageProcessingService,
         IStorageService storageService,
         IConfiguration configuration,
+        IMemoryCache memoryCache,
         ILogger<GalleryService> logger,
         IMapper mapper)
     {
@@ -61,14 +68,36 @@ public class GalleryService : IGalleryService
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
     }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<GalleryCategoryDto>> GetPublishedCategoriesAsync(CancellationToken cancellationToken = default)
     {
-        var categories = await _categoryQueryService.GetListAsync(new GalleryCategorySpecification(), cancellationToken);
+        // ATENCIÓN: el resultado cacheado es de SOLO LECTURA y se comparte entre todas las
+        // peticiones — IMemoryCache devuelve siempre la misma instancia. Nada fuera de este
+        // método debe mutar la lista ni sus DTO: un dto.Photos = ... o un
+        // dto.CoverPhoto.Title = ... en un refactor futuro corrompería la respuesta de
+        // todas las peticiones durante lo que reste del TTL, con un bug intermitente y
+        // prácticamente imposible de reproducir.
+        //
+        // Sin invalidación a propósito: siete métodos pueden cambiar la portada o el conteo
+        // (CreateCategory, UpdateCategory, DeactivateCategory, UploadPhoto, UpdatePhoto,
+        // DeletePhoto, ReorderPhotos) y basta olvidar uno para que el listado quede
+        // desfasado de forma permanente y difícil de diagnosticar. Un TTL corto no tiene
+        // puntos de fuga y el sitio se edita en ráfagas ocasionales.
+        //
+        // GetOrCreateAsync NO es atómico: al expirar la entrada, las peticiones concurrentes
+        // fallan la caché a la vez y ejecutan la consulta en paralelo. La caché es
+        // rendimiento, no defensa contra abuso; eso lo cubre la política de rate limiting.
+        var categories = await _memoryCache.GetOrCreateAsync(PublishedCategoriesCacheKey, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = PublishedCategoriesCacheTtl;
 
-        return _mapper.Map<List<GalleryCategoryDto>>(categories);
+            return await BuildPublishedCategoriesAsync(cancellationToken);
+        });
+
+        return categories ?? [];
     }
 
     /// <inheritdoc/>
@@ -92,7 +121,13 @@ public class GalleryService : IGalleryService
     {
         var page = await _categoryQueryService.GetPaginatedAsync(new GalleryCategorySpecification(pageIndex, pageSize), cancellationToken);
 
-        return _mapper.MapPage<GalleryCategory, GalleryCategoryDto>(page);
+        var photosByCategory = await GetActivePhotosByCategoryAsync(
+            page.Items.Select(category => category.Id).ToList(),
+            cancellationToken);
+
+        // Sin caché: la ruta del panel está autenticada y paginada, y debe ver los cambios
+        // recién guardados sin esperar al TTL del listado público.
+        return page.MapPage(category => MapCategorySummary(category, photosByCategory));
     }
 
     /// <inheritdoc/>
@@ -108,7 +143,9 @@ public class GalleryService : IGalleryService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var slugTaken = await _categoryQueryService.AnyAsync(new GalleryCategorySpecification(dto.Slug), cancellationToken);
+        // SlugTaken incluye las categorías despublicadas: el índice único de Slug no respeta
+        // el soft delete, así que una despublicada sigue ocupando su slug.
+        var slugTaken = await _categoryQueryService.AnyAsync(GalleryCategorySpecification.SlugTaken(dto.Slug), cancellationToken);
 
         if (slugTaken)
         {
@@ -131,7 +168,9 @@ public class GalleryService : IGalleryService
 
         if (!string.Equals(entity.Slug, dto.Slug, StringComparison.OrdinalIgnoreCase))
         {
-            var slugTaken = await _categoryQueryService.AnyAsync(new GalleryCategorySpecification(dto.Slug), cancellationToken);
+            // Mismo criterio que en el alta: el slug de una categoría despublicada sigue
+            // reservado por el índice único.
+            var slugTaken = await _categoryQueryService.AnyAsync(GalleryCategorySpecification.SlugTaken(dto.Slug), cancellationToken);
 
             if (slugTaken)
             {
@@ -173,7 +212,7 @@ public class GalleryService : IGalleryService
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(metadata);
 
-        var category = await _categoryQueryService.GetByIdAsync(metadata.GalleryCategoryId, cancellationToken: cancellationToken)
+        var category = await _categoryQueryService.GetByIdAsync(metadata.GalleryCategoryId, onlyActive: true, cancellationToken)
             ?? throw new EntityNotFoundException(nameof(GalleryCategory), metadata.GalleryCategoryId);
 
         EnsureExtensionIsAllowed(fileName);
@@ -218,7 +257,7 @@ public class GalleryService : IGalleryService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var entity = await _photoQueryService.GetByIdAsync(id, cancellationToken: cancellationToken)
+        var entity = await _photoQueryService.GetByIdAsync(id, onlyActive: true, cancellationToken: cancellationToken)
             ?? throw new EntityNotFoundException(nameof(Photo), id);
 
         // El mapeo ignora rutas y dimensiones: los archivos no se tocan aquí.
@@ -232,7 +271,7 @@ public class GalleryService : IGalleryService
     /// <inheritdoc/>
     public async Task DeletePhotoAsync(int id, CancellationToken cancellationToken = default)
     {
-        var entity = await _photoQueryService.GetByIdAsync(id, cancellationToken: cancellationToken)
+        var entity = await _photoQueryService.GetByIdAsync(id, onlyActive: true, cancellationToken: cancellationToken)
             ?? throw new EntityNotFoundException(nameof(Photo), id);
 
         // Primero el registro: si fallara el borrado de archivos quedan huérfanos
@@ -267,20 +306,20 @@ public class GalleryService : IGalleryService
     }
 
     /// <summary>
-    /// Mapea una categoría dejando solo sus fotografías activas y en orden.
+    /// Mapea una categoría a detalle con sus fotografías.
     /// </summary>
     /// <param name="category">Categoría con su colección de fotografías cargada.</param>
+    /// <returns>DTO de la categoría con sus fotografías.</returns>
     /// <remarks>
-    /// AddInclude no filtra por Activated ni permite ordenar la colección incluida.
+    /// La colección llega ya filtrada por Activated y ordenada por DisplayOrder desde SQL
+    /// (include filtrado en GalleryCategorySpecification). No hay filtro en memoria que
+    /// mantener sincronizado.
     /// </remarks>
     private GalleryCategoryDto MapCategoryWithPhotos(GalleryCategory category)
     {
         var dto = _mapper.Map<GalleryCategoryDto>(category);
 
-        dto.Photos = dto.Photos
-            .Where(photo => photo.Activated)
-            .OrderBy(photo => photo.DisplayOrder)
-            .ToList();
+        ApplyPhotoProjection(dto, dto.Photos, includePhotos: true);
 
         return dto;
     }
@@ -330,5 +369,109 @@ public class GalleryService : IGalleryService
                 _logger.LogError(ex, "No se pudo eliminar el archivo {Path} del almacenamiento.", path);
             }
         }
+    }
+
+    /// <summary>
+    /// Construye el listado público de categorías con sus campos calculados.
+    /// </summary>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Categorías publicadas, sin sus fotografías.</returns>
+    private async Task<IReadOnlyList<GalleryCategoryDto>> BuildPublishedCategoriesAsync(CancellationToken cancellationToken)
+    {
+        var categories = await _categoryQueryService.GetListAsync(new GalleryCategorySpecification(), cancellationToken);
+
+        var photosByCategory = await GetActivePhotosByCategoryAsync(
+            categories.Select(category => category.Id).ToList(),
+            cancellationToken);
+
+        return categories
+            .Select(category => MapCategorySummary(category, photosByCategory))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Obtiene las fotografías activas de un conjunto de categorías, agrupadas por categoría.
+    /// </summary>
+    /// <param name="galleryCategoryIds">Identificadores de las categorías.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>Fotografías activas indexadas por identificador de categoría.</returns>
+    /// <remarks>
+    /// Consulta aparte en lugar de AddInclude en la specification: el include de una
+    /// colección hace que EF Core emita un LEFT JOIN que repite las columnas de la categoría
+    /// en cada fila de fotografía, y haría que AutoMapper poblara dto.Photos en los listados.
+    /// Si el catálogo pasa de ~5,000 fotografías, esto debe moverse a una consulta proyectada
+    /// en infraestructura: hoy se materializan todas las filas para usar una por categoría.
+    /// </remarks>
+    private async Task<ILookup<int, PhotoDto>> GetActivePhotosByCategoryAsync(
+        IReadOnlyList<int> galleryCategoryIds,
+        CancellationToken cancellationToken)
+    {
+        if (galleryCategoryIds.Count == 0)
+        {
+            return Array.Empty<PhotoDto>().ToLookup(photo => photo.GalleryCategoryId);
+        }
+
+        var photos = await _photoQueryService.GetListAsync(
+            PhotoSpecification.ForCategories(galleryCategoryIds),
+            cancellationToken);
+
+        // La raíz sí la filtra QueryRepository.ApplySpecification para entidades
+        // ISoftDeletable (salvo ApplyIncludeDisabled), así que estas fotos ya vienen
+        // activas. Lo que NO se filtra solo es una colección incluida con AddInclude:
+        // ahí el Where(Activated) va dentro del include, no aquí.
+        return _mapper.Map<List<PhotoDto>>(photos)
+            .ToLookup(photo => photo.GalleryCategoryId);
+    }
+
+    /// <summary>
+    /// Mapea una categoría para un listado: con campos calculados y sin sus fotografías.
+    /// </summary>
+    /// <param name="category">Categoría a mapear.</param>
+    /// <param name="photosByCategory">Fotografías activas agrupadas por categoría.</param>
+    /// <returns>DTO de la categoría con la colección de fotografías vacía.</returns>
+    private GalleryCategoryDto MapCategorySummary(GalleryCategory category, ILookup<int, PhotoDto> photosByCategory)
+    {
+        var dto = _mapper.Map<GalleryCategoryDto>(category);
+
+        ApplyPhotoProjection(dto, photosByCategory[category.Id], includePhotos: false);
+
+        return dto;
+    }
+
+    /// <summary>
+    /// Calcula los campos derivados de una categoría a partir de sus fotografías activas.
+    /// </summary>
+    /// <param name="dto">DTO de la categoría, ya mapeado.</param>
+    /// <param name="activePhotos">Fotografías activas de la categoría.</param>
+    /// <param name="includePhotos">
+    /// <c>true</c> conserva las fotografías ordenadas; <c>false</c> vacía la colección.
+    /// </param>
+    /// <remarks>
+    /// Único punto donde se decide si el DTO viaja con sus fotografías. En los listados
+    /// tiene que ser <c>false</c>: devolverlas convertiría la página de categorías en una
+    /// respuesta de varios megabytes, y el síntoma en desarrollo es invisible porque el
+    /// JSON solo trae más datos.
+    /// El desempate IsFeatured descendente y luego DisplayOrder ascendente se resuelve en
+    /// memoria: BaseSpecification admite una sola expresión de orden y AddInclude no ordena
+    /// la colección incluida.
+    /// </remarks>
+    private static void ApplyPhotoProjection(
+        GalleryCategoryDto dto,
+        IEnumerable<PhotoDto> activePhotos,
+        bool includePhotos)
+    {
+        // La secuencia se recorre tres veces: se materializa una sola vez.
+        var photos = activePhotos as IReadOnlyList<PhotoDto> ?? activePhotos.ToList();
+
+        dto.PhotoCount = photos.Count;
+
+        dto.CoverPhoto = photos
+            .OrderByDescending(photo => photo.IsFeatured)
+            .ThenBy(photo => photo.DisplayOrder)
+            .FirstOrDefault();
+
+        dto.Photos = includePhotos
+            ? photos.OrderBy(photo => photo.DisplayOrder).ToList()
+            : [];
     }
 }

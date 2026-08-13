@@ -36,5 +36,9 @@ public class PackageSpecification : BaseSpecification<Package>
     {
         ApplyPaging(pageIndex, pageSize);
         AddOrderBy(x => x.DisplayOrder);
+
+        // DisplayOrder no es único: sin desempate, OFFSET/FETCH puede repetir u omitir
+        // filas entre páginas. La PK lo hace determinista.
+        AddThenBy(x => x.Id);
     }
 }

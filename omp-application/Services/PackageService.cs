@@ -54,7 +54,7 @@ public class PackageService : IPackageService
     /// <inheritdoc/>
     public async Task<PackageDto?> GetPackageByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        var package = await _queryService.GetByIdAsync(id, cancellationToken: cancellationToken);
+        var package = await _queryService.GetByIdAsync(id, onlyActive: true, cancellationToken: cancellationToken);
 
         return package is null ? null : _mapper.Map<PackageDto>(package);
     }
@@ -76,7 +76,7 @@ public class PackageService : IPackageService
         ArgumentNullException.ThrowIfNull(dto);
 
         // Se lee la entidad y se mapea el DTO encima para conservar la auditoría de creación.
-        var entity = await _queryService.GetByIdAsync(id, cancellationToken: cancellationToken)
+        var entity = await _queryService.GetByIdAsync(id, onlyActive: true, cancellationToken: cancellationToken)
             ?? throw new EntityNotFoundException(nameof(Package), id);
 
         _mapper.Map(dto, entity);

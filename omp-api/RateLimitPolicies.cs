@@ -14,4 +14,9 @@ public static class RateLimitPolicies
     /// Política para la subida de imágenes desde el panel de administración.
     /// </summary>
     public const string Uploads = "uploads";
+
+    /// <summary>
+    /// Política para los GET públicos y anónimos de la landing (galería y paquetes).
+    /// </summary>
+    public const string PublicReads = "public-reads";
 }

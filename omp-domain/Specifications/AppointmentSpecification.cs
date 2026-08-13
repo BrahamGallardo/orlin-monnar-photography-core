@@ -28,6 +28,7 @@ public class AppointmentSpecification : BaseSpecification<Appointment>
     {
         ApplyPaging(pageIndex, pageSize);
         AddOrderByDescending(x => x.AppointmentDate);
+        //AddThenBy(x => x.Id);
         AddInclude(x => x.Package!);
     }
 
@@ -42,6 +43,7 @@ public class AppointmentSpecification : BaseSpecification<Appointment>
     {
         ApplyPaging(pageIndex, pageSize);
         AddOrderByDescending(x => x.AppointmentDate);
+        //AddThenBy(x => x.Id);
         AddInclude(x => x.Package!);
     }
 
@@ -57,6 +59,7 @@ public class AppointmentSpecification : BaseSpecification<Appointment>
     {
         ApplyPaging(pageIndex, pageSize);
         AddOrderBy(x => x.AppointmentDate);
+        //AddThenBy(x => x.Id);
         AddInclude(x => x.Package!);
     }
 
@@ -81,6 +84,7 @@ public class AppointmentSpecification : BaseSpecification<Appointment>
         var specification = new AppointmentSpecification(fromDateUtc);
         specification.ApplyPaging(1, take);
         specification.AddOrderBy(x => x.AppointmentDate);
+        //AddThenBy(x => x.Id);
         specification.AddInclude(x => x.Package!);
 
         return specification;

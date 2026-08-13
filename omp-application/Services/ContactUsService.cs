@@ -108,7 +108,7 @@ public class ContactUsService : IContactUsService
     /// <inheritdoc/>
     public async Task<ContactMessageDto?> GetMessageByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        var message = await _queryService.GetByIdAsync(id, cancellationToken: cancellationToken);
+        var message = await _queryService.GetByIdAsync(id, onlyActive: true, cancellationToken: cancellationToken);
 
         return message is null ? null : _mapper.Map<ContactMessageDto>(message);
     }
@@ -133,7 +133,7 @@ public class ContactUsService : IContactUsService
     /// <param name="cancellationToken">Token de cancelación.</param>
     private async Task<ContactMessageDto> ChangeStatusAsync(int id, string status, CancellationToken cancellationToken)
     {
-        var entity = await _queryService.GetByIdAsync(id, cancellationToken: cancellationToken)
+        var entity = await _queryService.GetByIdAsync(id, onlyActive: true, cancellationToken: cancellationToken)
             ?? throw new EntityNotFoundException(nameof(ContactMessage), id);
 
         entity.Status = status;

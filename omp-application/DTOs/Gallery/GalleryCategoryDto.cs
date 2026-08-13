@@ -36,7 +36,31 @@ public class GalleryCategoryDto : BaseDto
     public int DisplayOrder { get; set; }
 
     /// <summary>
-    /// Fotografías de la categoría. Vacío si no se solicitaron.
+    /// Fotografía de portada. Nula si la categoría no tiene fotografías activas.
+    /// </summary>
+    /// <remarks>
+    /// Es la primera fotografía activa ordenando por <c>IsFeatured</c> descendente y luego
+    /// por <c>DisplayOrder</c> ascendente. Ojo con el desempate: <c>IsFeatured</c> significa
+    /// "aparece en el carrusel del Home", no "es la portada de su categoría". Se reutiliza
+    /// como criterio de desempate porque coincide con lo que el cliente espera, pero implica
+    /// que marcar una fotografía como destacada puede cambiar la portada de su categoría.
+    /// </remarks>
+    public PhotoDto? CoverPhoto { get; set; }
+
+    /// <summary>
+    /// Número de fotografías activas de la categoría.
+    /// </summary>
+    /// <remarks>
+    /// Nombre en singular a propósito: AutoMapper aplana por convención y un miembro
+    /// llamado <c>PhotosCount</c> se resolvería solo contra <c>Photos.Count</c> de la
+    /// entidad, que cuenta también las inactivas. El <c>Ignore()</c> explícito del perfil
+    /// de mapeo cubre el riesgo, pero no renombres esta propiedad sin revisarlo.
+    /// </remarks>
+    public int PhotoCount { get; set; }
+
+    /// <summary>
+    /// Fotografías de la categoría. Siempre vacío en los listados; poblado solo en la
+    /// consulta a detalle por slug o por identificador.
     /// </summary>
     public IReadOnlyList<PhotoDto> Photos { get; set; } = [];
 }

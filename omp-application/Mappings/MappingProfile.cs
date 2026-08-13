@@ -37,7 +37,18 @@ public class MappingProfile : Profile
             .ForMember(destination => destination.Package, options => options.Ignore())
             .IgnoreIdentityAndAudit();
 
-        CreateMap<GalleryCategory, GalleryCategoryDto>();
+        // CoverPhoto y PhotoCount los calcula GalleryService a partir de las fotografías
+        // activas: no hay origen en la entidad. El Ignore() es defensivo — hoy AutoMapper
+        // deja los miembros sin resolver en su valor por defecto porque Program.cs no llama
+        // AssertConfigurationIsValid, y ninguno de los dos nombres se aplana por convención.
+        CreateMap<GalleryCategory, GalleryCategoryDto>()
+            .ForMember(destination => destination.CoverPhoto, options => options.Ignore())
+            .ForMember(destination => destination.PhotoCount, options => options.Ignore());
+
+        // Sin cambios: GalleryCategory no tiene CoverPhoto ni PhotoCount, así que no se
+        // pueden ignorar en esta dirección (ForMember exige un miembro del destino).
+        // Tampoco hace falta: AutoMapper valida con MemberList.Destination y nunca se queja
+        // de miembros de origen sin usar.
         CreateMap<GalleryCategoryDto, GalleryCategory>()
             .ForMember(destination => destination.Photos, options => options.Ignore())
             .IgnoreIdentityAndAudit();
