@@ -132,27 +132,18 @@ public class AppointmentService : IAppointmentService
     }
 
     /// <inheritdoc/>
-    public async Task<IPaginatedList<AppointmentDto>> GetAppointmentsPageAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default)
-    {
-        var page = await _queryService.GetPaginatedAsync(new AppointmentSpecification(pageIndex, pageSize), cancellationToken);
-
-        return _mapper.MapPage<Appointment, AppointmentDto>(page);
-    }
-
-    /// <inheritdoc/>
-    public async Task<IPaginatedList<AppointmentDto>> GetAppointmentsByStatusPageAsync(string status, int pageIndex, int pageSize, CancellationToken cancellationToken = default)
-    {
-        var page = await _queryService.GetPaginatedAsync(new AppointmentSpecification(status, pageIndex, pageSize), cancellationToken);
-
-        return _mapper.MapPage<Appointment, AppointmentDto>(page);
-    }
-
-    /// <inheritdoc/>
-    public async Task<IPaginatedList<AppointmentDto>> GetAppointmentsInRangePageAsync(DateTime startDateUtc, DateTime endDateUtc, int pageIndex, int pageSize, CancellationToken cancellationToken = default)
+    public async Task<IPaginatedList<AppointmentDto>> GetAppointmentsPageAsync(
+        string? status,
+        DateTime? startDateUtc,
+        DateTime? endDateUtc,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
     {
         var specification = new AppointmentSpecification(
-            NormalizeToUtc(startDateUtc),
-            NormalizeToUtc(endDateUtc),
+            status,
+            startDateUtc.HasValue ? NormalizeToUtc(startDateUtc.Value) : null,
+            endDateUtc.HasValue ? NormalizeToUtc(endDateUtc.Value) : null,
             pageIndex,
             pageSize);
 

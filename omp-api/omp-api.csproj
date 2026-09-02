@@ -5,6 +5,7 @@
     <RootNamespace>omp_api</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UserSecretsId>bc78aeb0-1012-4c6a-a42c-d941d3d7e946</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

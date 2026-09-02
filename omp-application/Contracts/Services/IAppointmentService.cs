@@ -17,31 +17,23 @@ public interface IAppointmentService
     Task<AppointmentDto> RequestAppointmentAsync(CreateAppointmentRequestDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Obtiene una página de citas.
+    /// Obtiene una página de citas, opcionalmente filtrada por estatus y por rango de
+    /// fechas en UTC. Ambos filtros se combinan.
     /// </summary>
+    /// <param name="status">Estatus a filtrar. Null o vacío no filtra.</param>
+    /// <param name="startDateUtc">Inicio del rango, en UTC. Null no filtra.</param>
+    /// <param name="endDateUtc">Fin del rango, en UTC. Null no filtra.</param>
     /// <param name="pageIndex">Índice de página, base 1.</param>
     /// <param name="pageSize">Cantidad de elementos por página.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
-    Task<IPaginatedList<AppointmentDto>> GetAppointmentsPageAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Obtiene una página de citas filtradas por estatus.
-    /// </summary>
-    /// <param name="status">Estatus a filtrar.</param>
-    /// <param name="pageIndex">Índice de página, base 1.</param>
-    /// <param name="pageSize">Cantidad de elementos por página.</param>
-    /// <param name="cancellationToken">Token de cancelación.</param>
-    Task<IPaginatedList<AppointmentDto>> GetAppointmentsByStatusPageAsync(string status, int pageIndex, int pageSize, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Obtiene una página de citas dentro de un rango de fechas en UTC.
-    /// </summary>
-    /// <param name="startDateUtc">Inicio del rango, en UTC.</param>
-    /// <param name="endDateUtc">Fin del rango, en UTC.</param>
-    /// <param name="pageIndex">Índice de página, base 1.</param>
-    /// <param name="pageSize">Cantidad de elementos por página.</param>
-    /// <param name="cancellationToken">Token de cancelación.</param>
-    Task<IPaginatedList<AppointmentDto>> GetAppointmentsInRangePageAsync(DateTime startDateUtc, DateTime endDateUtc, int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+    /// <remarks>El rango se aplica sólo cuando ambos extremos vienen informados.</remarks>
+    Task<IPaginatedList<AppointmentDto>> GetAppointmentsPageAsync(
+        string? status,
+        DateTime? startDateUtc,
+        DateTime? endDateUtc,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene las próximas citas para el tablero del panel.

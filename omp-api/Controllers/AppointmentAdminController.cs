@@ -28,19 +28,35 @@ public class AppointmentAdminController : ControllerBase
     }
 
     /// <summary>
-    /// Obtiene una página de citas.
+    /// Obtiene una página de citas, opcionalmente filtrada por estatus y por rango de
+    /// fechas. Ambos filtros se combinan.
     /// </summary>
+    /// <param name="status">Estatus a filtrar. Omitir para no filtrar.</param>
+    /// <param name="startDateUtc">Inicio del rango, en UTC.</param>
+    /// <param name="endDateUtc">Fin del rango, en UTC.</param>
     /// <param name="pageIndex">Índice de página, base 1.</param>
     /// <param name="pageSize">Cantidad de elementos por página.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
     [HttpGet]
     [ProducesResponseType(typeof(IPaginatedList<AppointmentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetAppointmentsPage(
+        [FromQuery] string? status = null,
+        [FromQuery] DateTime? startDateUtc = null,
+        [FromQuery] DateTime? endDateUtc = null,
         [FromQuery] int pageIndex = 1,
         [FromQuery] int pageSize = 15,
         CancellationToken cancellationToken = default)
     {
-        var page = await _appointmentService.GetAppointmentsPageAsync(pageIndex, pageSize, cancellationToken);
+        var rangeError = ValidateRange(startDateUtc, endDateUtc);
+
+        if (rangeError is not null)
+        {
+            return BadRequest(rangeError);
+        }
+
+        var page = await _appointmentService.GetAppointmentsPageAsync(
+            status, startDateUtc, endDateUtc, pageIndex, pageSize, cancellationToken);
 
         return Ok(page);
     }
@@ -52,6 +68,10 @@ public class AppointmentAdminController : ControllerBase
     /// <param name="pageIndex">Índice de página, base 1.</param>
     /// <param name="pageSize">Cantidad de elementos por página.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// Se conserva por compatibilidad. El panel usa la ruta base, que además permite
+    /// combinar el estatus con el rango de fechas.
+    /// </remarks>
     [HttpGet("status/{status}")]
     [ProducesResponseType(typeof(IPaginatedList<AppointmentDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAppointmentsByStatus(
@@ -60,7 +80,8 @@ public class AppointmentAdminController : ControllerBase
         [FromQuery] int pageSize = 15,
         CancellationToken cancellationToken = default)
     {
-        var page = await _appointmentService.GetAppointmentsByStatusPageAsync(status, pageIndex, pageSize, cancellationToken);
+        var page = await _appointmentService.GetAppointmentsPageAsync(
+            status, null, null, pageIndex, pageSize, cancellationToken);
 
         return Ok(page);
     }
@@ -73,6 +94,7 @@ public class AppointmentAdminController : ControllerBase
     /// <param name="pageIndex">Índice de página, base 1.</param>
     /// <param name="pageSize">Cantidad de elementos por página.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>Se conserva por compatibilidad. Ver <see cref="GetAppointmentsPage"/>.</remarks>
     [HttpGet("range")]
     [ProducesResponseType(typeof(IPaginatedList<AppointmentDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -83,20 +105,52 @@ public class AppointmentAdminController : ControllerBase
         [FromQuery] int pageSize = 15,
         CancellationToken cancellationToken = default)
     {
-        if (endDateUtc < startDateUtc)
+        var rangeError = ValidateRange(startDateUtc, endDateUtc);
+
+        if (rangeError is not null)
         {
-            return BadRequest(new ProblemDetails
+            return BadRequest(rangeError);
+        }
+
+        var page = await _appointmentService.GetAppointmentsPageAsync(
+            null, startDateUtc, endDateUtc, pageIndex, pageSize, cancellationToken);
+
+        return Ok(page);
+    }
+
+    /// <summary>
+    /// Valida el rango de fechas recibido.
+    /// </summary>
+    /// <param name="startDateUtc">Inicio del rango, en UTC.</param>
+    /// <param name="endDateUtc">Fin del rango, en UTC.</param>
+    /// <returns>El problema detectado, o null cuando el rango es utilizable.</returns>
+    /// <remarks>
+    /// Un rango a medias se rechaza en lugar de ignorarse: devolver la página completa
+    /// ante una fecha capturada haría creer al panel que el filtro se aplicó.
+    /// </remarks>
+    private static ProblemDetails? ValidateRange(DateTime? startDateUtc, DateTime? endDateUtc)
+    {
+        if (startDateUtc.HasValue != endDateUtc.HasValue)
+        {
+            return new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Rango incompleto",
+                Detail = "El rango requiere la fecha inicial y la final."
+            };
+        }
+
+        if (startDateUtc.HasValue && endDateUtc!.Value < startDateUtc.Value)
+        {
+            return new ProblemDetails
             {
                 Status = StatusCodes.Status400BadRequest,
                 Title = "Rango inválido",
                 Detail = "La fecha final debe ser posterior a la inicial."
-            });
+            };
         }
 
-        var page = await _appointmentService.GetAppointmentsInRangePageAsync(
-            startDateUtc, endDateUtc, pageIndex, pageSize, cancellationToken);
-
-        return Ok(page);
+        return null;
     }
 
     /// <summary>

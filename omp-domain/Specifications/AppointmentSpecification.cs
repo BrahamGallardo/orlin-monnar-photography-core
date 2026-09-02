@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using BrahmCQRS.Domain.Specifications;
 using omp_domain.Entities;
 
@@ -19,48 +20,71 @@ public class AppointmentSpecification : BaseSpecification<Appointment>
     }
 
     /// <summary>
-    /// Gets all appointments with pagination, ordered by appointment date descending.
+    /// Gets a page of appointments, optionally filtered by status and by a UTC date
+    /// range, ordered by appointment date descending.
     /// </summary>
+    /// <param name="status">Status to filter by. Null or blank matches every status.</param>
+    /// <param name="startDateUtc">Inclusive range start, in UTC. Null disables the range.</param>
+    /// <param name="endDateUtc">Inclusive range end, in UTC. Null disables the range.</param>
     /// <param name="pageIndex">Page index (1-based).</param>
     /// <param name="pageSize">Number of items per page.</param>
-    public AppointmentSpecification(int pageIndex, int pageSize)
-        : base()
+    /// <remarks>
+    /// Both filters compose, which the previous per-filter constructors could not do:
+    /// <see cref="BaseSpecification{T}"/> holds a single criteria expression.
+    /// </remarks>
+    public AppointmentSpecification(
+        string? status,
+        DateTime? startDateUtc,
+        DateTime? endDateUtc,
+        int pageIndex,
+        int pageSize)
+        : base(BuildCriteria(status, startDateUtc, endDateUtc))
     {
         ApplyPaging(pageIndex, pageSize);
         AddOrderByDescending(x => x.AppointmentDate);
-        //AddThenBy(x => x.Id);
         AddInclude(x => x.Package!);
     }
 
     /// <summary>
-    /// Gets appointments filtered by status with pagination.
+    /// Builds the criteria matching the supplied filters.
     /// </summary>
-    /// <param name="status">Appointment status to filter by.</param>
-    /// <param name="pageIndex">Page index (1-based).</param>
-    /// <param name="pageSize">Number of items per page.</param>
-    public AppointmentSpecification(string status, int pageIndex, int pageSize)
-        : base(x => x.Status == status)
+    /// <param name="status">Status to filter by, if any.</param>
+    /// <param name="startDateUtc">Inclusive range start, in UTC, if any.</param>
+    /// <param name="endDateUtc">Inclusive range end, in UTC, if any.</param>
+    /// <returns>The expression to hand to the base specification.</returns>
+    /// <remarks>
+    /// One closed lambda per combination instead of a single expression guarded by
+    /// null checks: the latter reaches SQL Server as `@p IS NULL OR Column = @p`,
+    /// which cannot seek the index on AppointmentDate and poisons the cached plan.
+    /// The range is treated as a pair because a half open range is rejected upstream.
+    /// </remarks>
+    private static Expression<Func<Appointment, bool>> BuildCriteria(
+        string? status,
+        DateTime? startDateUtc,
+        DateTime? endDateUtc)
     {
-        ApplyPaging(pageIndex, pageSize);
-        AddOrderByDescending(x => x.AppointmentDate);
-        //AddThenBy(x => x.Id);
-        AddInclude(x => x.Package!);
-    }
+        var hasStatus = !string.IsNullOrWhiteSpace(status);
+        var hasRange = startDateUtc.HasValue && endDateUtc.HasValue;
 
-    /// <summary>
-    /// Gets appointments within a UTC date range with pagination.
-    /// </summary>
-    /// <param name="startDateUtc">Range start, in UTC.</param>
-    /// <param name="endDateUtc">Range end, in UTC.</param>
-    /// <param name="pageIndex">Page index (1-based).</param>
-    /// <param name="pageSize">Number of items per page.</param>
-    public AppointmentSpecification(DateTime startDateUtc, DateTime endDateUtc, int pageIndex, int pageSize)
-        : base(x => x.AppointmentDate >= startDateUtc && x.AppointmentDate <= endDateUtc)
-    {
-        ApplyPaging(pageIndex, pageSize);
-        AddOrderBy(x => x.AppointmentDate);
-        //AddThenBy(x => x.Id);
-        AddInclude(x => x.Package!);
+        if (hasStatus && hasRange)
+        {
+            return x => x.Status == status
+                && x.AppointmentDate >= startDateUtc!.Value
+                && x.AppointmentDate <= endDateUtc!.Value;
+        }
+
+        if (hasStatus)
+        {
+            return x => x.Status == status;
+        }
+
+        if (hasRange)
+        {
+            return x => x.AppointmentDate >= startDateUtc!.Value
+                && x.AppointmentDate <= endDateUtc!.Value;
+        }
+
+        return x => true;
     }
 
     /// <summary>
