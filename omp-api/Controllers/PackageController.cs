@@ -46,6 +46,7 @@ public class PackageController : ControllerBase
     /// </summary>
     /// <param name="pageIndex">Índice de página, base 1.</param>
     /// <param name="pageSize">Cantidad de elementos por página.</param>
+    /// <param name="includeDeactivated">Incluir los paquetes despublicados.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
     [HttpGet("admin")]
     [Authorize]
@@ -54,11 +55,29 @@ public class PackageController : ControllerBase
     public async Task<IActionResult> GetPackagesPage(
         [FromQuery] int pageIndex = 1,
         [FromQuery] int pageSize = 15,
+        [FromQuery] bool includeDeactivated = false,
         CancellationToken cancellationToken = default)
     {
-        var page = await _packageService.GetPackagesPageAsync(pageIndex, pageSize, cancellationToken);
+        var page = await _packageService.GetPackagesPageAsync(pageIndex, pageSize, includeDeactivated, cancellationToken);
 
         return Ok(page);
+    }
+
+    /// <summary>
+    /// Vuelve a publicar un paquete despublicado.
+    /// </summary>
+    /// <param name="id">Identificador del paquete.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    [HttpPost("{id:int}/reactivate")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ReactivatePackage(int id, CancellationToken cancellationToken)
+    {
+        await _packageService.ReactivatePackageAsync(id, cancellationToken);
+
+        return NoContent();
     }
 
     /// <summary>

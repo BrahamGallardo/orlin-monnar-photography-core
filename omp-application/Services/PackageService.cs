@@ -44,11 +44,28 @@ public class PackageService : IPackageService
     }
 
     /// <inheritdoc/>
-    public async Task<IPaginatedList<PackageDto>> GetPackagesPageAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default)
+    public async Task<IPaginatedList<PackageDto>> GetPackagesPageAsync(
+        int pageIndex,
+        int pageSize,
+        bool includeDeactivated = false,
+        CancellationToken cancellationToken = default)
     {
-        var page = await _queryService.GetPaginatedAsync(new PackageSpecification(pageIndex, pageSize), cancellationToken);
+        var page = await _queryService.GetPaginatedAsync(
+            new PackageSpecification(pageIndex, pageSize, includeDeactivated),
+            cancellationToken);
 
         return _mapper.MapPage<Package, PackageDto>(page);
+    }
+
+    /// <inheritdoc/>
+    public async Task ReactivatePackageAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var reactivated = await _commandService.ReactivateAsync(id, cancellationToken);
+
+        if (!reactivated)
+        {
+            throw new EntityNotFoundException(nameof(Package), id);
+        }
     }
 
     /// <inheritdoc/>
@@ -76,7 +93,8 @@ public class PackageService : IPackageService
         ArgumentNullException.ThrowIfNull(dto);
 
         // Se lee la entidad y se mapea el DTO encima para conservar la auditoría de creación.
-        var entity = await _queryService.GetByIdAsync(id, onlyActive: true, cancellationToken: cancellationToken)
+        // Sin onlyActive: un paquete despublicado también debe poder editarse desde el panel.
+        var entity = await _queryService.GetByIdAsync(id, cancellationToken: cancellationToken)
             ?? throw new EntityNotFoundException(nameof(Package), id);
 
         _mapper.Map(dto, entity);

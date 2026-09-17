@@ -19,8 +19,24 @@ public interface IPackageService
     /// </summary>
     /// <param name="pageIndex">Índice de página, base 1.</param>
     /// <param name="pageSize">Cantidad de elementos por página.</param>
+    /// <param name="includeDeactivated">Incluir los paquetes despublicados.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
-    Task<IPaginatedList<PackageDto>> GetPackagesPageAsync(int pageIndex, int pageSize, CancellationToken cancellationToken = default);
+    Task<IPaginatedList<PackageDto>> GetPackagesPageAsync(
+        int pageIndex,
+        int pageSize,
+        bool includeDeactivated = false,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Vuelve a publicar un paquete despublicado.
+    /// </summary>
+    /// <param name="id">Identificador del paquete.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// El listado público no tiene caché: el paquete vuelve a salir en la página
+    /// Investment desde la siguiente petición.
+    /// </remarks>
+    Task ReactivatePackageAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene un paquete por identificador.
@@ -42,6 +58,14 @@ public interface IPackageService
     /// <param name="id">Identificador del paquete.</param>
     /// <param name="dto">Datos actualizados.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// Admite paquetes despublicados: el panel los edita desde el listado con
+    /// <c>includeDeactivated</c>. <c>Activated</c> viaja en el DTO y sí se mapea sobre la
+    /// entidad (<c>IgnoreIdentityAndAudit</c> no lo ignora), igual que en galería: enviar
+    /// <c>false</c> despublica el paquete y omitirlo lo republica, porque
+    /// <c>BaseDto.Activated</c> vale <c>true</c> por defecto. El panel debe enviar
+    /// siempre el valor actual.
+    /// </remarks>
     Task<PackageDto> UpdatePackageAsync(int id, PackageDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>
