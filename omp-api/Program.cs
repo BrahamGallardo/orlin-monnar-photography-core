@@ -1,6 +1,8 @@
+using System.Net;
 using System.Threading.RateLimiting;
 using BrahmCQRS.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -103,6 +105,28 @@ builder.WebHost.ConfigureKestrel(options =>
 // -----------------------------------------------------------------------------
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// -----------------------------------------------------------------------------
+// Proxy inverso (nginx): IP real del cliente y esquema original
+// -----------------------------------------------------------------------------
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    // Sin esto RemoteIpAddress es la IP de nginx: las políticas de rate limiting por IP
+    // agruparían a todos los visitantes en una sola partición y UseHttpsRedirection no
+    // sabría que la petición original ya llegó por HTTPS.
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    // Solo se confía en proxies conocidos. Por defecto, loopback (nginx en el mismo
+    // servidor). Vaciar las listas permitiría falsificar la IP con X-Forwarded-For.
+    var knownProxies = builder.Configuration
+        .GetSection("ForwardedHeaders:KnownProxies")
+        .Get<string[]>() ?? [];
+
+    foreach (var proxy in knownProxies)
+    {
+        options.KnownProxies.Add(IPAddress.Parse(proxy));
+    }
+});
 
 // -----------------------------------------------------------------------------
 // Rate limiting (endpoints públicos anónimos y subida de imágenes)
@@ -236,8 +260,11 @@ if (app.Environment.IsDevelopment())
 // En desarrollo no se redirige a HTTPS: el navegador no sigue redirecciones en
 // las peticiones OPTIONS, por lo que el preflight de CORS de la landing falla.
 // En producción el proxy sirve landing, panel y API bajo el mismo origen y HTTPS.
+// UseForwardedHeaders va primero: HTTPS, rate limiting y autenticación leen la IP
+// y el esquema que reporta nginx, no los de la conexión con el proxy.
 if (!app.Environment.IsDevelopment())
 {
+    app.UseForwardedHeaders();
     app.UseHttpsRedirection();
 }
 

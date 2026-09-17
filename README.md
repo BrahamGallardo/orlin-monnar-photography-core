@@ -98,10 +98,52 @@ dotnet tool restore
 | `ReCaptcha` | Clave secreta, score mínimo. `EnableValidation: false` solo en dev |
 | `Storage` | Raíz en disco, URL pública, tamaño máximo, extensiones permitidas |
 | `Cors:AllowedOrigins` | Orígenes del dev server. En producción CORS está apagado |
+| `ForwardedHeaders:KnownProxies` | IPs de nginx si no corre en el mismo servidor. Vacío = solo loopback |
 
-**Secretos.** `appsettings.Production.json` está en el `.gitignore`. Los valores reales van ahí o en variables de entorno del servidor — nunca en `appsettings.json`.
+**Secretos.** Ningún archivo versionado lleva credenciales reales. `appsettings.json` y `appsettings.Development.json` traen las claves sensibles vacías o con valores ficticios; `appsettings.Production.json` está en el `.gitignore`.
 
-El `SecretKey` de JWT debe tener **al menos 32 caracteres** o la aplicación no arranca.
+### Desarrollo: user secrets
+
+`omp-api.csproj` declara `UserSecretsId`, así que la cadena de conexión vive fuera del repositorio (`%APPDATA%\Microsoft\UserSecrets\<UserSecretsId>\secrets.json`) y se carga solo con `ASPNETCORE_ENVIRONMENT=Development`, por encima de `appsettings.Development.json`.
+
+```powershell
+# desde la carpeta de la solución
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Data Source=<servidor>;Database=<base>;User Id=<usuario>;Password=<contraseña>;Encrypt=False" --project omp-api
+dotnet user-secrets list --project omp-api
+```
+
+Sin este secreto la API arranca, pero la primera petición que toque la base falla. Si `dotnet ef` no toma el secreto, pásale el ambiente: `-- --environment Development`.
+
+### Producción: variables de entorno
+
+En producción estas claves deben venir de variables de entorno del servidor. Tienen prioridad sobre `appsettings.Production.json`; el separador de sección es `__` (doble guion bajo).
+
+| Variable de entorno | Notas |
+|---|---|
+| `ASPNETCORE_ENVIRONMENT` | `Production` |
+| `ConnectionStrings__DefaultConnection` | Cadena de SQL Server |
+| `BrahmCQRS__Auth__JWT__SecretKey` | **Mínimo 32 caracteres** o la aplicación no arranca |
+| `Mail__SmtpServer` / `Mail__SmtpPort` | Servidor SMTP |
+| `Mail__SenderEmail` / `Mail__SenderPassword` | Cuenta remitente (contraseña de aplicación) |
+| `ReCaptcha__SecretKey` | Clave secreta real de reCAPTCHA v3 |
+| `Storage__RootPath` | Ruta absoluta en disco de las imágenes |
+| `Storage__PublicBaseUrl` | URL pública de los derivados (por defecto `/media`) |
+| `ForwardedHeaders__KnownProxies__0` | Solo si nginx corre en otro host o contenedor (`__1`, `__2`… para más) |
+
+### Producción: nginx
+
+La API confía en `X-Forwarded-For` y `X-Forwarded-Proto` solo cuando vienen de un proxy conocido. Sin estos encabezados, el rate limiting por IP trata a todos los visitantes como uno solo.
+
+```nginx
+location /api/ {
+    proxy_pass         http://127.0.0.1:5000;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+}
+```
+
+El puerto `5000` es de ejemplo; usa el que tenga Kestrel en el servidor.
 
 ---
 
