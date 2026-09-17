@@ -28,11 +28,12 @@ public class MappingProfile : Profile
                 options => options.MapFrom(source => source.Package != null ? source.Package.Name : null));
 
         // Solo del formulario público hacia la entidad: el estatus y las fechas de
-        // confirmación o cancelación los fija el servicio, nunca el cliente.
+        // confirmación, cancelación o cierre las fija el servicio, nunca el cliente.
         CreateMap<CreateAppointmentRequestDto, Appointment>()
             .ForMember(destination => destination.Status, options => options.Ignore())
             .ForMember(destination => destination.ConfirmedDate, options => options.Ignore())
             .ForMember(destination => destination.CancelledDate, options => options.Ignore())
+            .ForMember(destination => destination.CompletedDate, options => options.Ignore())
             .ForMember(destination => destination.AdminNotes, options => options.Ignore())
             .ForMember(destination => destination.Package, options => options.Ignore())
             .IgnoreIdentityAndAudit();

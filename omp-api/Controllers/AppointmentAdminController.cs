@@ -224,4 +224,28 @@ public class AppointmentAdminController : ControllerBase
 
         return Ok(appointment);
     }
+
+    /// <summary>
+    /// Marca una cita como realizada. No envía correo al cliente.
+    /// </summary>
+    /// <param name="id">Identificador de la cita.</param>
+    /// <param name="dto">Notas internas opcionales.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// Solo procede sobre una cita confirmada. Las transiciones válidas las resuelve
+    /// <c>AppointmentService</c>, que responde 400 ante cualquier otra.
+    /// </remarks>
+    [HttpPost("{id:int}/complete")]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CompleteAppointment(
+        int id,
+        [FromBody] AppointmentStatusChangeDto dto,
+        CancellationToken cancellationToken)
+    {
+        var appointment = await _appointmentService.CompleteAppointmentAsync(id, dto, cancellationToken);
+
+        return Ok(appointment);
+    }
 }

@@ -64,6 +64,11 @@ public class AppointmentDto : BaseDto
     public DateTime? CancelledDate { get; set; }
 
     /// <summary>
+    /// Fecha en que la sesión se marcó como realizada, en UTC.
+    /// </summary>
+    public DateTime? CompletedDate { get; set; }
+
+    /// <summary>
     /// Notas internas del administrador.
     /// </summary>
     public string? AdminNotes { get; set; }

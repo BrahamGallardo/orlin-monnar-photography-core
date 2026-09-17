@@ -21,6 +21,30 @@ public class AppointmentService : IAppointmentService
 {
     private const string CaptchaAction = "booking";
 
+    /// <summary>
+    /// Estatus a los que puede moverse una cita desde cada estatus actual.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Cancelled y Completed son finales: una vez ahí la cita no admite más cambios.
+    /// Completed solo se alcanza desde Confirmed, porque marcar como realizada una
+    /// sesión que nunca se confirmó saltaría el acuerdo con el cliente.
+    /// </para>
+    /// <para>
+    /// Sustituye a las guardas sueltas que solo cubrían el estatus repetido y el paso
+    /// de Cancelled a Confirmed. Con el cierre de sesiones esas dos ya no bastan:
+    /// Cancelled a Completed y Completed a cualquier otro estatus quedarían abiertas.
+    /// </para>
+    /// </remarks>
+    private static readonly IReadOnlyDictionary<string, IReadOnlyCollection<string>> AllowedTransitions =
+        new Dictionary<string, IReadOnlyCollection<string>>(StringComparer.Ordinal)
+        {
+            [AppointmentStatus.Pending] = new[] { AppointmentStatus.Confirmed, AppointmentStatus.Cancelled },
+            [AppointmentStatus.Confirmed] = new[] { AppointmentStatus.Cancelled, AppointmentStatus.Completed },
+            [AppointmentStatus.Cancelled] = Array.Empty<string>(),
+            [AppointmentStatus.Completed] = Array.Empty<string>()
+        };
+
     private readonly IQueryService<Appointment> _queryService;
     private readonly ICommandService<Appointment> _commandService;
     private readonly IQueryService<Package> _packageQueryService;
@@ -199,6 +223,14 @@ public class AppointmentService : IAppointmentService
         return result;
     }
 
+    /// <inheritdoc/>
+    public Task<AppointmentDto> CompleteAppointmentAsync(int id, AppointmentStatusChangeDto dto, CancellationToken cancellationToken = default)
+    {
+        // A diferencia de confirmar y cancelar, cerrar una sesión no notifica al cliente:
+        // es un cambio administrativo que no le pide nada ni altera lo acordado con él.
+        return ChangeStatusAsync(id, AppointmentStatus.Completed, dto, cancellationToken);
+    }
+
     /// <summary>
     /// Cambia el estatus de una cita conservando su auditoría de creación.
     /// </summary>
@@ -220,9 +252,9 @@ public class AppointmentService : IAppointmentService
             throw new InvalidOperationException($"La cita ya se encuentra en estatus '{status}'.");
         }
 
-        if (entity.Status == AppointmentStatus.Cancelled && status == AppointmentStatus.Confirmed)
+        if (!AllowedTransitions.TryGetValue(entity.Status, out var allowed) || !allowed.Contains(status))
         {
-            throw new InvalidOperationException("Una cita cancelada no se puede confirmar.");
+            throw new InvalidOperationException(DescribeRejection(entity.Status, status));
         }
 
         var packageName = entity.Package?.Name;
@@ -237,6 +269,10 @@ public class AppointmentService : IAppointmentService
         else if (status == AppointmentStatus.Cancelled)
         {
             entity.CancelledDate = now;
+        }
+        else if (status == AppointmentStatus.Completed)
+        {
+            entity.CompletedDate = now;
         }
 
         if (!string.IsNullOrWhiteSpace(dto?.AdminNotes))
@@ -254,6 +290,23 @@ public class AppointmentService : IAppointmentService
 
         return result;
     }
+
+    /// <summary>
+    /// Explica por qué se rechazó un cambio de estatus.
+    /// </summary>
+    /// <param name="current">Estatus actual de la cita.</param>
+    /// <param name="target">Estatus solicitado.</param>
+    /// <remarks>
+    /// El mensaje viaja al panel como el Detail del ProblemDetails que arma
+    /// GlobalExceptionHandler, así que se redacta para el administrador.
+    /// </remarks>
+    private static string DescribeRejection(string current, string target) => (current, target) switch
+    {
+        (AppointmentStatus.Cancelled, _) => "Una cita cancelada no admite cambios de estatus.",
+        (AppointmentStatus.Completed, _) => "Una cita completada no admite cambios de estatus.",
+        (AppointmentStatus.Pending, AppointmentStatus.Completed) => "Solo se puede completar una cita que ya está confirmada.",
+        _ => $"No es posible pasar una cita del estatus '{current}' al estatus '{target}'."
+    };
 
     /// <summary>
     /// Envía un correo. Registra el fallo sin propagarlo.

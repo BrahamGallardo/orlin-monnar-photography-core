@@ -73,6 +73,11 @@ public class Appointment : BaseEntity
     public DateTime? CancelledDate { get; set; }
 
     /// <summary>
+    /// Fecha y hora en que se marcó la sesión como realizada, en UTC.
+    /// </summary>
+    public DateTime? CompletedDate { get; set; }
+
+    /// <summary>
     /// Notas internas del administrador. No se envían al cliente.
     /// </summary>
     public string? AdminNotes { get; set; }

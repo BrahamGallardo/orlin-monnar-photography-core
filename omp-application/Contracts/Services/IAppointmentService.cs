@@ -64,4 +64,16 @@ public interface IAppointmentService
     /// <param name="dto">Notas internas opcionales.</param>
     /// <param name="cancellationToken">Token de cancelación.</param>
     Task<AppointmentDto> CancelAppointmentAsync(int id, AppointmentStatusChangeDto dto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marca una cita como realizada. No notifica al cliente.
+    /// </summary>
+    /// <param name="id">Identificador de la cita.</param>
+    /// <param name="dto">Notas internas opcionales.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>La cita con el estatus ya aplicado.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Cuando la cita no está confirmada, o ya se encuentra en un estatus final.
+    /// </exception>
+    Task<AppointmentDto> CompleteAppointmentAsync(int id, AppointmentStatusChangeDto dto, CancellationToken cancellationToken = default);
 }
