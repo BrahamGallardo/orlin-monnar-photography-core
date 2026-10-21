@@ -268,8 +268,9 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 
-// Los derivados de la galería se sirven como estáticos desde la raíz de Storage.
-// En producción esto lo hace el reverse proxy, no Kestrel.
+// Los derivados de la galería se sirven como estáticos desde la raíz de Storage, en
+// todos los ambientes. En producción nginx reenvía /media a Kestrel sin tocar este
+// Cache-Control (ver deploy/nginx/orlin-monnar-photography.conf).
 var storageSettings = app.Services.GetRequiredService<IOptions<StorageSettings>>().Value;
 
 if (!string.IsNullOrWhiteSpace(storageSettings.RootPath))

@@ -132,18 +132,77 @@ En producción estas claves deben venir de variables de entorno del servidor. Ti
 
 ### Producción: nginx
 
-La API confía en `X-Forwarded-For` y `X-Forwarded-Proto` solo cuando vienen de un proxy conocido. Sin estos encabezados, el rate limiting por IP trata a todos los visitantes como uno solo.
+Un solo dominio (`https://www.orlinmonnarphotography.com`; el dominio sin `www` y HTTP redirigen ahí) con cuatro rutas. Por eso CORS queda apagado fuera de desarrollo.
 
-```nginx
-location /api/ {
-    proxy_pass         http://127.0.0.1:5000;
-    proxy_set_header   Host              $host;
-    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-    proxy_set_header   X-Forwarded-Proto $scheme;
-}
+| Ruta | Quién la sirve | Caché |
+|---|---|---|
+| `/` | nginx, carpeta de la landing (sin build) | HTML, CSS y JS `no-cache` (revalidan con ETag: no llevan hash); imágenes y fuentes 7 días |
+| `/admin/` | nginx, `dist/` del panel; `/admin/*` cae en `/admin/index.html` | `index.html` `no-cache`; `/admin/assets/` inmutable un año |
+| `/api/` | Kestrel (`127.0.0.1:5000`) | La decide la API |
+| `/media/` | Kestrel (`UseStaticFiles` sobre `Storage:RootPath`) | `immutable` un año, lo pone la API |
+
+Archivos en [`deploy/`](deploy/):
+
+| Archivo | Destino en el servidor |
+|---|---|
+| `deploy/nginx/orlin-monnar-photography.conf` | `/etc/nginx/sites-available/` (enlazado en `sites-enabled/`) |
+| `deploy/nginx/snippets/*.conf` | `/etc/nginx/snippets/` |
+| `deploy/systemd/omp-api.service` | `/etc/systemd/system/` |
+| `deploy/systemd/omp-api.env.example` | `/etc/omp/omp-api.env` (completar; `root:omp`, `chmod 640`) |
+
+Reglas que no se deducen leyendo la configuración:
+
+- **`^~` en `/api/`, `/media/` y `/admin/`.** Las regex de la landing ganan sobre un prefijo normal; sin `^~`, `/admin/index.html` y `/admin/assets/*.js` se buscarían en la carpeta de la landing.
+- **El límite de subida es el mismo valor en tres lugares:** `Storage:MaxUploadSizeMB` (de ahí salen `FormOptions` y Kestrel), `client_max_body_size` de `location = /api/admin/gallery/photos` y `storage.maxUploadSizeMb` del panel. Si nginx dejara pasar más que Kestrel, Kestrel cortaría la conexión y el navegador recibiría **502**, no 413.
+- **`proxy_read_timeout 180s` en la subida.** El panel espera hasta 120 s; con los 60 s por defecto de nginx una foto pesada daría 504 mientras ImageSharp sigue procesando.
+- **`X-Forwarded-For $remote_addr`.** nginx es el borde, así que el valor que mande el cliente se sustituye. Sin estos encabezados el rate limiting por IP trata a todos los visitantes como uno solo. Si algún día se pone un CDN delante, hay que revisar esto y `ForwardedHeaders:KnownProxies`.
+- **Brotli** está comentado en `omp-compression.conf`: requiere `libnginx-mod-http-brotli-filter`. WebP nunca se comprime.
+
+### Producción: checklist de despliegue
+
+En la máquina de desarrollo:
+
+```powershell
+# API (framework-dependent: el servidor necesita aspnetcore-runtime-8.0)
+dotnet publish omp-api -c Release -o .\publish
+dotnet ef migrations script --idempotent --project omp-infrastructure --startup-project omp-api -o deploy.sql
+
+# Panel
+cd "..\Orlin Monnar Photography Admin"
+npm ci
+npm run build
 ```
 
-El puerto `5000` es de ejemplo; usa el que tenga Kestrel en el servidor.
+En el servidor:
+
+1. Instalar `nginx`, `aspnetcore-runtime-8.0` y `certbot`. Crear el usuario `omp` y las carpetas `/var/www/omp/{api,landing,admin}`, `/var/omp/media` (dueño `omp`) y `/var/www/certbot`.
+2. Copiar `publish\*` a `/var/www/omp/api/`.
+3. Aplicar `deploy.sql` en la base de producción y cambiar la contraseña del administrador sembrado.
+4. Copiar la landing a `/var/www/omp/landing/` **sin** `.git`, `.gitignore`, `scss/`, `README.md`, `readme.txt`, `node_modules/` ni `js/app/config.example.js`, y crear ahí `js/app/config.js` con `baseUrl: ''` y la clave real de reCAPTCHA.
+5. Copiar el **contenido** de `dist/` del panel a `/var/www/omp/admin/` (debe quedar `/var/www/omp/admin/index.html`).
+6. Crear `/etc/omp/omp-api.env` y `systemctl daemon-reload && systemctl enable --now omp-api`.
+7. Copiar sitio y snippets, quitar `sites-enabled/default` (choca con `default_server`), y:
+   ```bash
+   certbot certonly --webroot -w /var/www/certbot -d www.orlinmonnarphotography.com -d orlinmonnarphotography.com
+   nginx -t && systemctl reload nginx
+   ```
+   El primer `-d` da nombre a la carpeta `/etc/letsencrypt/live/www.orlinmonnarphotography.com/`. Antes del primer certificado, el sitio no pasa `nginx -t` porque los `ssl_certificate` no existen todavía: habilita temporalmente solo el bloque del puerto 80 para emitirlo.
+
+Verificación:
+
+```bash
+D=https://www.orlinmonnarphotography.com
+curl -sI $D/                          | grep -iE '^HTTP|cache-control'                 # 200, no-cache
+curl -sI $D/css/style.css -H 'Accept-Encoding: gzip' | grep -iE 'cache-control|content-encoding'
+curl -sI $D/admin                     | grep -iE '^HTTP|location'                      # 301 → /admin/
+curl -sI $D/admin/appointments        | grep -iE '^HTTP|content-type'                  # 200 text/html
+curl -sI $D/admin/assets/<archivo>.js | grep -i cache-control                          # immutable
+curl -s  $D/api/packages -o /dev/null -w '%{http_code} %{content_type}\n'              # 200 application/json
+curl -sI $D/media/<ruta>.webp         | grep -iE 'cache-control|content-encoding'      # immutable, sin content-encoding
+curl -sI https://orlinmonnarphotography.com/ | grep -i location                         # → https://www...
+```
+
+Desde el panel: una foto mayor a `Storage:MaxUploadSizeMB` debe mostrar el mensaje de 413, y el sexto login fallido en un minuto debe dar 429 solo para tu IP (prueba de que llega la IP real).
 
 ---
 
