@@ -105,31 +105,12 @@ public class AppointmentService : IAppointmentService
             throw new InvalidOperationException("La validación de reCAPTCHA no fue superada.");
         }
 
-        // La API recibe y almacena fechas en UTC. Un Kind sin especificar se
-        // interpreta como UTC, nunca como hora local del servidor.
-        var appointmentDateUtc = NormalizeToUtc(dto.AppointmentDate);
-
-        if (appointmentDateUtc <= _timeProvider.GetUtcNow())
-        {
-            throw new InvalidOperationException("La fecha de la cita debe ser posterior al momento actual.");
-        }
-
-        var package = await _packageQueryService.GetByIdAsync(dto.PackageId, onlyActive: true, cancellationToken)
-            ?? throw new EntityNotFoundException(nameof(Package), dto.PackageId);
-
-        var entity = _mapper.Map<Appointment>(dto);
-        entity.AppointmentDate = appointmentDateUtc;
-        entity.Status = AppointmentStatus.Pending;
-
-        var created = await _commandService.CreateAsync(entity, cancellationToken);
-
-        var result = _mapper.Map<AppointmentDto>(created);
-        result.PackageName = package.Name;
+        var result = await CreateValidatedAsync(_mapper.Map<Appointment>(dto), AppointmentStatus.Pending, cancellationToken);
 
         // La cita ya está guardada: un fallo de correo no debe perderla.
         await SendAsync(
             result.Email,
-            $"Recibimos tu solicitud de sesión — {package.Name}",
+            $"Recibimos tu solicitud de sesión — {result.PackageName}",
             _emailTemplateService.BuildAppointmentRequestForClient(result),
             result.Id,
             cancellationToken);
@@ -150,6 +131,27 @@ public class AppointmentService : IAppointmentService
             _logger.LogWarning(
                 "No hay destinatario configurado en Booking:RecipientEmail. No se envió el aviso de la cita {AppointmentId}.",
                 result.Id);
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
+    public async Task<AppointmentDto> CreateAppointmentByAdminAsync(AdminCreateAppointmentRequestDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        var result = await CreateValidatedAsync(_mapper.Map<Appointment>(dto), AppointmentStatus.Confirmed, cancellationToken);
+
+        // Nunca se avisa a Booking:RecipientEmail: quien captura la cita es el propio estudio.
+        if (dto.NotifyClient)
+        {
+            await SendAsync(
+                result.Email,
+                "Tu sesión fotográfica quedó confirmada",
+                _emailTemplateService.BuildAppointmentConfirmedForClient(result),
+                result.Id,
+                cancellationToken);
         }
 
         return result;
@@ -229,6 +231,54 @@ public class AppointmentService : IAppointmentService
         // A diferencia de confirmar y cancelar, cerrar una sesión no notifica al cliente:
         // es un cambio administrativo que no le pide nada ni altera lo acordado con él.
         return ChangeStatusAsync(id, AppointmentStatus.Completed, dto, cancellationToken);
+    }
+
+    /// <summary>
+    /// Valida y guarda una cita nueva ya mapeada desde la solicitud.
+    /// </summary>
+    /// <param name="entity">Cita mapeada, todavía sin estatus ni fechas de transición.</param>
+    /// <param name="initialStatus">Estatus con el que nace la cita.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>La cita guardada, con el nombre del paquete informado.</returns>
+    /// <exception cref="InvalidOperationException">Cuando la fecha no es posterior al momento actual.</exception>
+    /// <exception cref="EntityNotFoundException">Cuando el paquete no existe o está despublicado.</exception>
+    /// <remarks>
+    /// Lo comparten el formulario público y el alta del panel. Cada flujo resuelve antes
+    /// sus propias validaciones (el captcha, en el público) y después sus correos.
+    /// </remarks>
+    private async Task<AppointmentDto> CreateValidatedAsync(
+        Appointment entity,
+        string initialStatus,
+        CancellationToken cancellationToken)
+    {
+        var now = _timeProvider.GetUtcNow();
+
+        // La API recibe y almacena fechas en UTC. Un Kind sin especificar se
+        // interpreta como UTC, nunca como hora local del servidor.
+        var appointmentDateUtc = NormalizeToUtc(entity.AppointmentDate);
+
+        if (appointmentDateUtc <= now)
+        {
+            throw new InvalidOperationException("La fecha de la cita debe ser posterior al momento actual.");
+        }
+
+        var package = await _packageQueryService.GetByIdAsync(entity.PackageId, onlyActive: true, cancellationToken)
+            ?? throw new EntityNotFoundException(nameof(Package), entity.PackageId);
+
+        entity.AppointmentDate = appointmentDateUtc;
+        entity.Status = initialStatus;
+
+        if (initialStatus == AppointmentStatus.Confirmed)
+        {
+            entity.ConfirmedDate = now;
+        }
+
+        var created = await _commandService.CreateAsync(entity, cancellationToken);
+
+        var result = _mapper.Map<AppointmentDto>(created);
+        result.PackageName = package.Name;
+
+        return result;
     }
 
     /// <summary>

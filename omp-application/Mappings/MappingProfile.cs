@@ -38,6 +38,20 @@ public class MappingProfile : Profile
             .ForMember(destination => destination.Package, options => options.Ignore())
             .IgnoreIdentityAndAudit();
 
+        // Alta desde el panel: mismas exclusiones que el formulario público, salvo las
+        // notas internas, que aquí sí captura el administrador. Unas notas en blanco se
+        // guardan como null, con el mismo criterio que el cambio de estatus.
+        CreateMap<AdminCreateAppointmentRequestDto, Appointment>()
+            .ForMember(destination => destination.Status, options => options.Ignore())
+            .ForMember(destination => destination.ConfirmedDate, options => options.Ignore())
+            .ForMember(destination => destination.CancelledDate, options => options.Ignore())
+            .ForMember(destination => destination.CompletedDate, options => options.Ignore())
+            .ForMember(
+                destination => destination.AdminNotes,
+                options => options.MapFrom(source => string.IsNullOrWhiteSpace(source.AdminNotes) ? null : source.AdminNotes))
+            .ForMember(destination => destination.Package, options => options.Ignore())
+            .IgnoreIdentityAndAudit();
+
         // CoverPhoto y PhotoCount los calcula GalleryService a partir de las fotografías
         // activas: no hay origen en la entidad. El Ignore() es defensivo — hoy AutoMapper
         // deja los miembros sin resolver en su valor por defecto porque Program.cs no llama

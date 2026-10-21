@@ -186,6 +186,30 @@ public class AppointmentAdminController : ControllerBase
     }
 
     /// <summary>
+    /// Registra una cita capturada por el administrador. Nace confirmada y, si se pide,
+    /// notifica al cliente por correo.
+    /// </summary>
+    /// <param name="dto">Datos de la cita.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <remarks>
+    /// Sin reCAPTCHA ni límite de peticiones: el endpoint exige sesión. La cita se guarda
+    /// aunque falle el envío de correo.
+    /// </remarks>
+    [HttpPost]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CreateAppointment(
+        [FromBody] AdminCreateAppointmentRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        var created = await _appointmentService.CreateAppointmentByAdminAsync(dto, cancellationToken);
+
+        return CreatedAtAction(nameof(GetAppointmentById), new { id = created.Id }, created);
+    }
+
+    /// <summary>
     /// Confirma una cita y notifica al cliente por correo.
     /// </summary>
     /// <param name="id">Identificador de la cita.</param>

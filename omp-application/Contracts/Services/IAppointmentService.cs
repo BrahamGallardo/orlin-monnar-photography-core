@@ -1,4 +1,5 @@
 using BrahmCQRS.Domain.Contracts.Common;
+using BrahmCQRS.Domain.Exceptions;
 using omp_application.DTOs.Appointment;
 
 namespace omp_application.Contracts.Services;
@@ -15,6 +16,25 @@ public interface IAppointmentService
     /// <param name="cancellationToken">Token de cancelación.</param>
     /// <remarks>La cita se guarda aunque falle el envío de correo.</remarks>
     Task<AppointmentDto> RequestAppointmentAsync(CreateAppointmentRequestDto dto, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Registra una cita capturada por el administrador. La cita nace confirmada.
+    /// </summary>
+    /// <param name="dto">Datos capturados en el panel.</param>
+    /// <param name="cancellationToken">Token de cancelación.</param>
+    /// <returns>La cita guardada, en estatus Confirmed y con la fecha de confirmación informada.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Cuando la fecha de la cita no es posterior al momento actual.
+    /// </exception>
+    /// <exception cref="EntityNotFoundException">
+    /// Cuando el paquete no existe o está despublicado.
+    /// </exception>
+    /// <remarks>
+    /// Si <see cref="AdminCreateAppointmentRequestDto.NotifyClient"/> es verdadero se envía al
+    /// cliente el correo de confirmación. Nunca se envía el aviso interno. La cita se guarda
+    /// aunque falle el envío de correo.
+    /// </remarks>
+    Task<AppointmentDto> CreateAppointmentByAdminAsync(AdminCreateAppointmentRequestDto dto, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene una página de citas, opcionalmente filtrada por estatus y por rango de
